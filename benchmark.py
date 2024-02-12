@@ -60,14 +60,7 @@ def main():
     dataset = load_dataset("opus100", f'{source_language}-{target_language}', split=f'train[{start}:{start+n}]').shuffle().select(range(n))
 
     # Process each model one at a time
-    translator = None
     for model in models:
-        # Clear CUDA
-        del translator
-        if str(device).startswith('cuda'):
-            torch.cuda.empty_cache()
-        gc.collect()
-
         # Handle the model naming
         model_target_language = target_language
         if model.startswith('madlad'):
@@ -80,18 +73,22 @@ def main():
             translator = M2MTranslator(device, True, quant4_config, False, max_length, model_size)
         elif model.startswith('mbart'):
             translator = mBARTTranslator(device, True, quant4_config, False, max_length)
-            model_target_language = translator.language_mapping[target_language]
+            model_target_language = translator.language_mapping.get(target_language, None)
         elif model.startswith('nllb'):
             model_size = model.split('_')[1].upper()
             translator = NLLBTranslator(device, True, quant4_config, False, max_length, model_size)
-            # TODO: Extend this later, there are far more languages
-            model_target_language = translator.language_mapping[target_language]
+            model_target_language = translator.language_mapping.get(target_language, None)
         elif model.startswith('seamless'):
             model_size = 'large' # Currently only one on HF
             translator = Seamless_M4T_V2(device, True, quant4_config, False, max_length, model_size)
         else:
             translator = OPUSTranslator(device, False, quant4_config, False, max_length)
-        
+
+        # Check if the translator supports the target language
+        if model_target_language is None:
+            print(f"[---- LLaMa2Lang ----] [{model}] Skipping model, target language not supported.")
+            continue
+
         # Run the translations
         translated = []
         for s in dataset['translation']:
